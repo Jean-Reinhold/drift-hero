@@ -244,12 +244,48 @@ export default function GameShell() {
       <section className="stage">
         <GameCanvas trackConfig={trackConfig} onTelemetry={handleTelemetry} />
 
+        <div className="hud-panel">
+          <div className="profile-header">
+            <img
+              src="https://github.com/Jean-Reinhold.png"
+              alt="Jean Reinhold"
+              className="profile-avatar"
+            />
+            <div className="profile-info">
+              <div className="profile-name">Jean Reinhold</div>
+              <div className="profile-role">Visit my platforms</div>
+            </div>
+          </div>
+          <div className="profile-links">
+            <a
+              href="https://github.com/Jean-Reinhold"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="profile-link"
+            >
+              GitHub
+            </a>
+            <a
+              href="https://www.linkedin.com/in/jean-paul-reinhold-70b4031b3/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="profile-link"
+            >
+              LinkedIn
+            </a>
+          </div>
+        </div>
+
         <div className="score-board" data-active={isChaining}>
           <div className="score-board__header">Skill Score</div>
           <div className="score-board__row">
-            <div className="score-board__score">
-              {formatScore(telemetry.score)}
+            <div
+              className="score-board__multiplier score-board__multiplier--ghost"
+              aria-hidden="true"
+            >
+              x{telemetry.multiplier.toFixed(1)}
             </div>
+            <div className="score-board__score">{formatScore(telemetry.score)}</div>
             <div className="score-board__multiplier">
               x{telemetry.multiplier.toFixed(1)}
             </div>

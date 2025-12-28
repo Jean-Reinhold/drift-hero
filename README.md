@@ -1,30 +1,51 @@
 # Drift Hero
 
-A dark-themed Next.js template for a 2D top-down drifting game. It includes a
-procedural sinewave track generator, a simple drift physics model, and a canvas
-render loop with a minimal HUD.
+Arcade-style, top-down drifting demo built with Next.js. A canvas renderer, simple drift physics, and a procedural sinewave track combine into a single-page experience with a lightweight HUD and docked YouTube playlist.
 
-## Features
-- Single-page game layout at `/` with a minimal HUD
-- Procedural track built from stacked sine waves
-- Rear-biased drift physics with handbrake
-- Asphalt track rendering with boundaries and centerline
-- Small, soft YouTube playlist player
+## Highlights
+- Procedural track made from stacked sine waves; fresh layout on each load
+- Rear-biased drift physics with handbrake and chaining multiplier
+- Canvas 2D renderer with boundaries, centerline, and HUD overlays
+- Input handling for keyboard + tap-friendly YouTube playlist embed
+- Ready-to-run Next.js App Router setup with TypeScript
 
-## Quick Start
+## Tech Stack
+- Next.js 14 (App Router) + React 18
+- TypeScript
+- Canvas 2D rendering
+
+## Requirements
+- Node.js 18+ (matches Next.js 14 support)
+- npm (bundled with Node)
+
+## Getting Started
 1. Install dependencies: `npm install`
-2. Run the dev server: `npm run dev`
-3. Open `http://localhost:3000`
+2. Start dev server: `npm run dev`
+3. Open `http://localhost:3000` and start drifting
+
+## Available Scripts
+- `npm run dev` – start the development server
+- `npm run build` – build the production bundle
+- `npm start` – run the production server (after `npm run build`)
+- `npm run lint` – lint the project with ESLint
 
 ## Controls
 - Move: WASD or Arrow keys
 - Handbrake: Space
 
-## Project Structure
-- `app/page.tsx`: main page (game layout)
-- `app/GameShell.tsx`: UI overlays and HUD
-- `app/GameCanvas.tsx`: canvas + engine wiring
-- `lib/game/engine.ts`: render loop, scoring, input
-- `lib/game/track.ts`: procedural track sampling
-- `lib/game/physics.ts`: drift physics
-- `lib/game/render.ts`: drawing
+## Project Layout
+- `app/page.tsx` – entry page wiring the game shell
+- `app/GameShell.tsx` – HUD, input handling, and YouTube playlist
+- `app/GameCanvas.tsx` – canvas element and engine bootstrap
+- `lib/game/engine.ts` – render loop, scoring, and input plumbing
+- `lib/game/track.ts` – procedural track sampler
+- `lib/game/physics.ts` – drift physics model
+- `lib/game/render.ts` – canvas drawing utilities
+- `lib/game/config.ts` – track configuration and seeding helpers
+
+## Deployment
+Configured for GitHub Pages via Actions:
+1. Push to `main`.
+2. In GitHub, open **Settings → Pages**.
+3. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+4. The workflow will run automatically on push to `main`.
