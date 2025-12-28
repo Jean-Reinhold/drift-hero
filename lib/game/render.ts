@@ -142,11 +142,8 @@ function drawTrack(
   ctx.strokeStyle = "rgba(248, 250, 252, 0.15)";
   const dashLength = 18;
   const dashGap = 18;
-  const dashCycle = dashLength + dashGap;
-  // Keep the centerline dashes anchored to world Y instead of the camera.
-  const dashOffset = ((startY % dashCycle) + dashCycle) % dashCycle;
   ctx.setLineDash([dashLength, dashGap]);
-  ctx.lineDashOffset = dashOffset;
+  ctx.lineDashOffset = 0; // Keep centerline dashes fixed instead of scrolling.
   ctx.beginPath();
   drawSmoothLine(ctx, centerPoints, true);
   ctx.stroke();

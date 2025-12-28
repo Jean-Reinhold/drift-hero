@@ -236,29 +236,40 @@ export default function GameShell() {
   const driftDegrees = Math.round(
     Math.abs(telemetry.driftAngle) * (180 / Math.PI)
   );
+  const chainPct = Math.max(0, Math.min(1, telemetry.combo / 4));
+  const isChaining = chainPct > 0;
 
   return (
     <main className="game-shell">
       <section className="stage">
         <GameCanvas trackConfig={trackConfig} onTelemetry={handleTelemetry} />
 
-        <div className="hud-panel">
-          <div className="hud-title">Drift Hero</div>
-          <div className="hud-row">
-            <span>Score</span>
-            <strong>{formatScore(telemetry.score)}</strong>
+        <div className="score-board" data-active={isChaining}>
+          <div className="score-board__header">Skill Score</div>
+          <div className="score-board__row">
+            <div className="score-board__score">
+              {formatScore(telemetry.score)}
+            </div>
+            <div className="score-board__multiplier">
+              x{telemetry.multiplier.toFixed(1)}
+            </div>
           </div>
-          <div className="hud-row">
-            <span>Multiplier</span>
-            <strong>x{telemetry.multiplier.toFixed(1)}</strong>
+          <div className="score-board__meter" aria-hidden="true">
+            <div
+              className="score-board__meter-fill"
+              style={{ width: `${Math.round(chainPct * 100)}%` }}
+            />
           </div>
-          <div className="hud-row">
-            <span>Speed</span>
-            <strong>{speed}</strong>
+        </div>
+
+        <div className="telemetry-card" aria-label="Speed and drift angle">
+          <div className="telemetry-card__row">
+            <div className="telemetry-card__label">Speed</div>
+            <div className="telemetry-card__value">{speed}</div>
           </div>
-          <div className="hud-row">
-            <span>Drift</span>
-            <strong>{driftDegrees}°</strong>
+          <div className="telemetry-card__row">
+            <div className="telemetry-card__label">Drift</div>
+            <div className="telemetry-card__value">{driftDegrees}°</div>
           </div>
         </div>
 
