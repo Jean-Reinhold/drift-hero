@@ -51,6 +51,8 @@ export default function GameShell() {
     combo: 0,
     onTrack: true
   });
+  const [pressedKeys, setPressedKeys] = useState<Set<string>>(() => new Set());
+  const releaseTimersRef = useRef<Map<string, number>>(new Map());
 
   const trackConfig = useMemo(() => createTrackConfig(randomSeed()), []);
   const playerRef = useRef<YouTubePlayer | null>(null);
@@ -166,6 +168,70 @@ export default function GameShell() {
     };
   }, []);
 
+  useEffect(() => {
+    const normalizeKey = (event: KeyboardEvent): string => {
+      const key = event.key.toLowerCase();
+      if (key === "spacebar" || key === "space") return " ";
+      return key;
+    };
+
+    const clearReleaseTimer = (key: string) => {
+      const existing = releaseTimersRef.current.get(key);
+      if (existing !== undefined) {
+        window.clearTimeout(existing);
+        releaseTimersRef.current.delete(key);
+      }
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = normalizeKey(event);
+      clearReleaseTimer(key);
+      setPressedKeys((prev) => {
+        if (prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      const key = normalizeKey(event);
+      clearReleaseTimer(key);
+      // Keep a tiny "tap flash" so very short presses still show up visually.
+      const timeout = window.setTimeout(() => {
+        setPressedKeys((prev) => {
+          if (!prev.has(key)) return prev;
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        releaseTimersRef.current.delete(key);
+      }, 180);
+      releaseTimersRef.current.set(key, timeout);
+    };
+
+    const onBlur = () => {
+      releaseTimersRef.current.forEach((timeout) => window.clearTimeout(timeout));
+      releaseTimersRef.current.clear();
+      setPressedKeys(new Set());
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+      releaseTimersRef.current.forEach((timeout) => window.clearTimeout(timeout));
+      releaseTimersRef.current.clear();
+    };
+  }, []);
+
+  const keycapClassName = (isPressed: boolean, wide = false) =>
+    `keycap${wide ? " wide" : ""}${isPressed ? " pressed" : ""}`;
+
   const speed = Math.round(telemetry.speed);
   const driftDegrees = Math.round(
     Math.abs(telemetry.driftAngle) * (180 / Math.PI)
@@ -204,19 +270,25 @@ export default function GameShell() {
         <div className="controls-legend">
           <div className="legend-title">Controls</div>
           <div className="legend-row">
-            <span className="keycap">W</span>
-            <span className="keycap">A</span>
-            <span className="keycap">S</span>
-            <span className="keycap">D</span>
+            <div className="key-cluster wasd-cluster" aria-label="WASD controls">
+              <span className={`${keycapClassName(pressedKeys.has("w"))} key-w`}>
+                W
+              </span>
+              <span className={`${keycapClassName(pressedKeys.has("a"))} key-a`}>
+                A
+              </span>
+              <span className={`${keycapClassName(pressedKeys.has("s"))} key-s`}>
+                S
+              </span>
+              <span className={`${keycapClassName(pressedKeys.has("d"))} key-d`}>
+                D
+              </span>
+            </div>
           </div>
           <div className="legend-row">
-            <span className="keycap">UP</span>
-            <span className="keycap">LEFT</span>
-            <span className="keycap">DOWN</span>
-            <span className="keycap">RIGHT</span>
-          </div>
-          <div className="legend-row">
-            <span className="keycap wide">SPACE</span>
+            <span className={keycapClassName(pressedKeys.has(" "), true)}>
+              SPACE
+            </span>
             <span className="legend-note">Handbrake</span>
           </div>
         </div>

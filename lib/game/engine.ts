@@ -18,13 +18,13 @@ export type GameEngine = {
 };
 
 const defaultTuning: CarTuning = {
-  accel: 140,
+  accel: 280,
   brakeForce: 110,
-  drag: 0.85,
-  lateralGrip: 6.2,
-  handbrakeGrip: 2.2,
-  steerStrength: 2.6,
-  maxSpeed: 240
+  drag: 0.6,
+  lateralGrip: 1.8,
+  handbrakeGrip: 1.8,
+  steerStrength: 3.2,
+  maxSpeed: 420
 };
 
 const keyMap = new Map<string, keyof InputState>([
@@ -171,9 +171,10 @@ export function createEngine(
       }
     }
 
-    camera.y = lerp(camera.y, car.position.y, 0.1);
+    // Frame-rate independent camera smoothing (feels consistent across FPS).
+    camera.y = damp(camera.y, car.position.y, 0.22, dt);
     const { centerX } = sampleTrack(trackConfig, camera.y);
-    camera.x = lerp(camera.x, centerX, 0.08);
+    camera.x = damp(camera.x, centerX, 0.32, dt);
 
     return { speed };
   };
@@ -229,4 +230,15 @@ function normalizeAngle(angle: number): number {
   while (normalized > Math.PI) normalized -= Math.PI * 2;
   while (normalized < -Math.PI) normalized += Math.PI * 2;
   return normalized;
+}
+
+function damp(
+  current: number,
+  target: number,
+  smoothTimeSeconds: number,
+  dt: number
+): number {
+  if (smoothTimeSeconds <= 0) return target;
+  const t = 1 - Math.exp(-dt / smoothTimeSeconds);
+  return lerp(current, target, t);
 }

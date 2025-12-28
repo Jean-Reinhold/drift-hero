@@ -162,28 +162,216 @@ function drawCar(
   anchor: Vec2
 ): void {
   const screen = worldToScreen(car.position, camera, anchor);
-  const length = 34;
-  const width = 18;
+  const length = 40;
+  const width = 20;
 
   ctx.save();
   ctx.translate(screen.x, screen.y);
   ctx.rotate(car.heading);
 
-  ctx.fillStyle = "#f8b44b";
-  ctx.strokeStyle = "rgba(15, 23, 32, 0.8)";
+  // Subtle shadow for depth / speed readability.
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = "#020409";
+  ctx.beginPath();
+  ctx.ellipse(0, length * 0.08, width * 0.75, length * 0.55, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // RX-7-ish top-down silhouette with smoother curves.
+  const noseY = -length * 0.58;
+  const tailY = length * 0.58;
+  const hoodY = -length * 0.28;
+  const roofY = -length * 0.08;
+  const rearDeckY = length * 0.22;
+
+  const half = width / 2;
+  const flare = half * 1.08;
+  const waist = half * 0.72;
+
+  // Wheels (draw first so the body sits on top).
+  ctx.save();
+  ctx.fillStyle = "#0b0f15";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.10)";
+  ctx.lineWidth = 1;
+  const wheelW = width * 0.24;
+  const wheelH = length * 0.24;
+  const wheelX = width * 0.58;
+  const frontAxleY = -length * 0.18;
+  const rearAxleY = length * 0.22;
+  ctx.beginPath();
+  roundRectPath(
+    ctx,
+    -wheelX - wheelW / 2,
+    frontAxleY - wheelH / 2,
+    wheelW,
+    wheelH,
+    3
+  );
+  roundRectPath(
+    ctx,
+    wheelX - wheelW / 2,
+    frontAxleY - wheelH / 2,
+    wheelW,
+    wheelH,
+    3
+  );
+  roundRectPath(
+    ctx,
+    -wheelX - wheelW / 2,
+    rearAxleY - wheelH / 2,
+    wheelW,
+    wheelH,
+    3
+  );
+  roundRectPath(
+    ctx,
+    wheelX - wheelW / 2,
+    rearAxleY - wheelH / 2,
+    wheelW,
+    wheelH,
+    3
+  );
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Body fill.
+  ctx.fillStyle = "#d0242b"; // red
+  ctx.strokeStyle = "rgba(8, 12, 18, 0.85)";
   ctx.lineWidth = 2;
 
   ctx.beginPath();
-  ctx.moveTo(0, -length * 0.6);
-  ctx.lineTo(width * 0.6, length * 0.4);
-  ctx.lineTo(0, length * 0.6);
-  ctx.lineTo(-width * 0.6, length * 0.4);
+  // Start at front center, curve around the nose and right fender.
+  ctx.moveTo(0, noseY);
+  ctx.bezierCurveTo(flare * 0.55, noseY, flare, hoodY * 1.05, flare, hoodY);
+  // Down the right side into the cabin waist.
+  ctx.bezierCurveTo(flare, roofY, waist, rearDeckY, waist, rearDeckY + length * 0.08);
+  // Rear quarter bulge to tail.
+  ctx.bezierCurveTo(waist, tailY * 0.88, flare * 0.92, tailY, 0, tailY);
+  // Mirror to left side.
+  ctx.bezierCurveTo(-flare * 0.92, tailY, -waist, tailY * 0.88, -waist, rearDeckY + length * 0.08);
+  ctx.bezierCurveTo(-waist, rearDeckY, -flare, roofY, -flare, hoodY);
+  ctx.bezierCurveTo(-flare, hoodY * 1.05, -flare * 0.55, noseY, 0, noseY);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "rgba(15, 23, 32, 0.7)";
-  ctx.fillRect(-width * 0.25, -length * 0.15, width * 0.5, length * 0.4);
+  // Hood highlight.
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.moveTo(0, noseY + length * 0.02);
+  ctx.bezierCurveTo(
+    half * 0.3,
+    noseY + length * 0.02,
+    half * 0.42,
+    hoodY,
+    0,
+    hoodY + length * 0.02
+  );
+  ctx.bezierCurveTo(
+    -half * 0.42,
+    hoodY,
+    -half * 0.3,
+    noseY + length * 0.02,
+    0,
+    noseY + length * 0.02
+  );
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // Front bumper / grille.
+  ctx.save();
+  ctx.fillStyle = "rgba(8, 12, 18, 0.78)";
+  const bumperY = noseY + length * 0.12;
+  const bumperW = width * 0.92;
+  const bumperH = length * 0.11;
+  ctx.beginPath();
+  roundRectPath(ctx, -bumperW / 2, bumperY, bumperW, bumperH, 6);
+  ctx.fill();
+  ctx.restore();
+
+  // Headlights (front) — make the front obvious.
+  ctx.save();
+  ctx.shadowColor = "rgba(248, 250, 252, 0.65)";
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = "rgba(248, 250, 252, 0.95)";
+  ctx.strokeStyle = "rgba(15, 23, 32, 0.35)";
+  ctx.lineWidth = 1.2;
+  const headlightY = noseY + length * 0.08;
+  const headlightW = width * 0.22;
+  const headlightH = length * 0.1;
+  const headlightInset = width * 0.28;
+  ctx.beginPath();
+  roundRectPath(
+    ctx,
+    -headlightInset - headlightW / 2,
+    headlightY,
+    headlightW,
+    headlightH,
+    4
+  );
+  roundRectPath(
+    ctx,
+    headlightInset - headlightW / 2,
+    headlightY,
+    headlightW,
+    headlightH,
+    4
+  );
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Windows (tinted).
+  ctx.save();
+  ctx.fillStyle = "rgba(5, 9, 14, 0.72)";
+  ctx.beginPath();
+  ctx.moveTo(0, roofY - length * 0.18);
+  ctx.bezierCurveTo(
+    half * 0.62,
+    roofY - length * 0.12,
+    half * 0.58,
+    rearDeckY - length * 0.05,
+    0,
+    rearDeckY - length * 0.02
+  );
+  ctx.bezierCurveTo(
+    -half * 0.58,
+    rearDeckY - length * 0.05,
+    -half * 0.62,
+    roofY - length * 0.12,
+    0,
+    roofY - length * 0.18
+  );
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // Rear wing / spoiler.
+  ctx.save();
+  ctx.fillStyle = "rgba(8, 12, 18, 0.85)";
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.3)";
+  ctx.lineWidth = 1;
+  const wingY = tailY - length * 0.08;
+  ctx.beginPath();
+  roundRectPath(ctx, -width * 0.42, wingY, width * 0.84, length * 0.06, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // Taillights.
+  ctx.save();
+  ctx.fillStyle = "rgba(255, 54, 54, 0.78)";
+  const tlY = tailY - length * 0.18;
+  ctx.beginPath();
+  roundRectPath(ctx, -width * 0.42, tlY, width * 0.22, length * 0.08, 3);
+  roundRectPath(ctx, width * 0.2, tlY, width * 0.22, length * 0.08, 3);
+  ctx.fill();
+  ctx.restore();
 
   ctx.restore();
 }
@@ -239,4 +427,21 @@ function drawSmoothLine(
 
   const last = points[points.length - 1];
   ctx.lineTo(last.x, last.y);
+}
+
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+): void {
+  const r = Math.min(radius, Math.abs(width) / 2, Math.abs(height) / 2);
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
 }

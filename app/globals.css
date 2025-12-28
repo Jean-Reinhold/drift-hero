@@ -162,6 +162,36 @@ select {
   align-items: center;
 }
 
+.key-cluster {
+  display: grid;
+  gap: 6px;
+}
+
+.wasd-cluster {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, auto);
+}
+
+.wasd-cluster .key-w {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.wasd-cluster .key-a {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.wasd-cluster .key-s {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.wasd-cluster .key-d {
+  grid-column: 3;
+  grid-row: 2;
+}
+
 .keycap {
   min-width: 34px;
   text-align: center;
@@ -171,6 +201,23 @@ select {
   background: rgba(15, 23, 32, 0.8);
   color: var(--text);
   font-size: 0.7rem;
+  user-select: none;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.keycap.pressed {
+  background: rgba(248, 250, 252, 0.92);
+  color: rgba(8, 12, 18, 0.95);
+  border-color: rgba(248, 250, 252, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(248, 250, 252, 0.25),
+    0 10px 22px rgba(2, 6, 23, 0.55);
+  transform: translateY(1px);
 }
 
 .keycap.wide {
