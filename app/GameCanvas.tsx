@@ -14,7 +14,7 @@ export default function GameCanvas({
   trackConfig,
   onTelemetry
 }: GameCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<ReturnType<typeof createEngine> | null>(null);
   const telemetryRef = useRef(onTelemetry);
   const initialConfigRef = useRef(trackConfig);
@@ -24,12 +24,23 @@ export default function GameCanvas({
   }, [onTelemetry]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    const engine = createEngine(canvas, initialConfigRef.current, (data) => {
-      telemetryRef.current(data);
-    });
+    const engine = createEngine(
+      container,
+      initialConfigRef.current,
+      (data) => {
+        telemetryRef.current(data);
+      },
+      {
+        renderer: "pixi",
+        useWorker: true,
+        renderFps: 60,
+        maxDpr: 0.85,
+        quality: { environment: "low" }
+      }
+    );
     engineRef.current = engine;
 
     return () => {
@@ -42,8 +53,8 @@ export default function GameCanvas({
   }, [trackConfig]);
 
   return (
-    <canvas
-      ref={canvasRef}
+    <div
+      ref={containerRef}
       className="game-canvas"
       role="img"
       aria-label="Drift Hero track and car"

@@ -1,30 +1,33 @@
-import { createCarState, stepCar, CarInput, CarTuning } from "./physics";
-import { clamp, lerp } from "./utils";
-import { TrackConfig, isOnTrack, sampleTrack } from "./track";
-import { createAsphaltPattern, renderFrame } from "./render";
+import type { CarInput, CarState, Vec2 } from "./physics";
+import type { TrackConfig } from "./track";
+import {
+  createSimulationState,
+  defaultTuning,
+  getTelemetry,
+  stepSimulation
+} from "./simulation";
+import type { Telemetry } from "./simulation";
+import {
+  createCanvasRenderer,
+  createPixiRenderer,
+  type RenderQuality,
+  type Renderer
+} from "./renderer";
 
-export type Telemetry = {
-  speed: number;
-  driftAngle: number;
-  score: number;
-  multiplier: number;
-  combo: number;
-  onTrack: boolean;
-};
+export type { Telemetry } from "./simulation";
 
 export type GameEngine = {
   updateTrack: (config: TrackConfig) => void;
   destroy: () => void;
 };
 
-const defaultTuning: CarTuning = {
-  accel: 280,
-  brakeForce: 110,
-  drag: 0.6,
-  lateralGrip: 1.8,
-  handbrakeGrip: 1.8,
-  steerStrength: 3.2,
-  maxSpeed: 420
+export type EngineOptions = {
+  renderer?: "pixi" | "canvas2d";
+  useWorker?: boolean;
+  fixedStep?: number;
+  renderFps?: number;
+  maxDpr?: number;
+  quality?: RenderQuality;
 };
 
 const keyMap = new Map<string, keyof InputState>([
@@ -39,6 +42,24 @@ const keyMap = new Map<string, keyof InputState>([
   [" ", "handbrake"]
 ]);
 
+const DEFAULT_FIXED_STEP = 1 / 60;
+const MAX_FRAME_TIME = 0.1;
+const MAX_SIM_STEPS = 5;
+const TELEMETRY_INTERVAL = 120;
+
+const defaultQuality: RenderQuality = {
+  environment: "low"
+};
+
+const defaultOptions: Required<EngineOptions> = {
+  renderer: "pixi",
+  useWorker: true,
+  fixedStep: DEFAULT_FIXED_STEP,
+  renderFps: 60,
+  maxDpr: 0.85,
+  quality: defaultQuality
+};
+
 type InputState = {
   up: boolean;
   down: boolean;
@@ -47,31 +68,36 @@ type InputState = {
   handbrake: boolean;
 };
 
+type SimulationSnapshot = {
+  car: CarState;
+  camera: Vec2;
+  telemetry: Telemetry;
+};
+
+type WorkerMessageOut = {
+  type: "state";
+  snapshot: SimulationSnapshot;
+};
+
 export function createEngine(
-  canvas: HTMLCanvasElement,
+  container: HTMLElement,
   initialTrack: TrackConfig,
-  onTelemetry?: (telemetry: Telemetry) => void
+  onTelemetry?: (telemetry: Telemetry) => void,
+  options: EngineOptions = {}
 ): GameEngine {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("Canvas 2D context not available");
-  }
+  const settings = {
+    ...defaultOptions,
+    ...options,
+    quality: { ...defaultQuality, ...options.quality }
+  };
 
   let trackConfig = initialTrack;
-  const car = createCarState();
-  car.position.y = 0;
-  car.heading = 0;
-  const startSample = sampleTrack(trackConfig, car.position.y);
-  car.position.x = startSample.centerX;
-
-  let score = 0;
-  let multiplier = 1;
-  let combo = 0;
-  let driftAngle = 0;
-  let onTrack = true;
-
-  const camera = { x: car.position.x, y: car.position.y };
+  const simState = createSimulationState(trackConfig);
   const anchor = { x: 0, y: 0 };
+  let canvas = document.createElement("canvas");
+  canvas.className = "game-canvas__surface";
+  canvas.setAttribute("aria-hidden", "true");
+  container.appendChild(canvas);
 
   const inputState: InputState = {
     up: false,
@@ -81,20 +107,36 @@ export function createEngine(
     handbrake: false
   };
 
-  let asphalt = createAsphaltPattern(ctx);
+  let renderer: Renderer | null = null;
   let raf = 0;
   let lastTime = performance.now();
+  let accumulator = 0;
   let lastTelemetry = 0;
+  let lastRender = 0;
+  let renderScale = settings.maxDpr;
+  let lastScaleCheck = 0;
+  let frameEmaMs = 16.7;
+  let destroyed = false;
 
-  const resize = () => {
-    const dpr = window.devicePixelRatio || 1;
-    const { clientWidth, clientHeight } = canvas;
-    canvas.width = Math.max(1, Math.floor(clientWidth * dpr));
-    canvas.height = Math.max(1, Math.floor(clientHeight * dpr));
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    anchor.x = clientWidth / 2;
-    anchor.y = clientHeight * 0.74;
-    asphalt = createAsphaltPattern(ctx);
+  let worker: Worker | null = null;
+  let workerSnapshot: SimulationSnapshot | null = null;
+  let displayCar: CarState = {
+    position: { ...simState.car.position },
+    velocity: { ...simState.car.velocity },
+    heading: simState.car.heading
+  };
+  let displayCamera: Vec2 = { ...simState.camera };
+
+  const buildInput = (): CarInput => ({
+    throttle: inputState.up ? 1 : 0,
+    brake: inputState.down ? 1 : 0,
+    steer: (inputState.right ? 1 : 0) - (inputState.left ? 1 : 0),
+    handbrake: inputState.handbrake
+  });
+
+  const syncInput = () => {
+    if (!worker) return;
+    worker.postMessage({ type: "input", input: buildInput() });
   };
 
   const handleKey = (event: KeyboardEvent, next: boolean) => {
@@ -102,6 +144,7 @@ export function createEngine(
     const mapped = keyMap.get(key);
     if (!mapped) return;
     inputState[mapped] = next;
+    syncInput();
     if (
       key === " " ||
       key.startsWith("arrow") ||
@@ -123,122 +166,237 @@ export function createEngine(
     inputState.left = false;
     inputState.right = false;
     inputState.handbrake = false;
+    syncInput();
+  };
+
+  const resize = () => {
+    const { clientWidth, clientHeight } = container;
+    const dpr = Math.min(window.devicePixelRatio || 1, renderScale);
+    anchor.x = clientWidth / 2;
+    anchor.y = clientHeight * 0.74;
+    renderer?.resize(clientWidth, clientHeight, dpr);
   };
 
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("keyup", onKeyUp);
   window.addEventListener("blur", onBlur);
   window.addEventListener("resize", resize);
-  resize();
 
-  const update = (dt: number) => {
-    const input: CarInput = {
-      throttle: inputState.up ? 1 : 0,
-      brake: inputState.down ? 1 : 0,
-      steer: (inputState.right ? 1 : 0) - (inputState.left ? 1 : 0),
-      handbrake: inputState.handbrake
-    };
+  if (settings.useWorker && typeof Worker !== "undefined") {
+    try {
+      worker = new Worker(new URL("./physics-worker.ts", import.meta.url), {
+        type: "module"
+      });
+      worker.onmessage = (event: MessageEvent<WorkerMessageOut>) => {
+        if (event.data?.type === "state") {
+          workerSnapshot = event.data.snapshot;
+        }
+      };
+      worker.postMessage({
+        type: "init",
+        trackConfig,
+        tuning: defaultTuning
+      });
+      syncInput();
+    } catch (error) {
+      worker = null;
+    }
+  }
 
-    stepCar(car, input, dt, defaultTuning);
+  const updateLocal = (dt: number) => {
+    stepSimulation(simState, buildInput(), dt, trackConfig, defaultTuning);
+  };
 
-    const speed = Math.hypot(car.velocity.x, car.velocity.y);
-    const velocityAngle = Math.atan2(car.velocity.x, car.velocity.y);
-    driftAngle = normalizeAngle(velocityAngle - car.heading);
+  const smoothStep = (current: number, target: number, smoothTime: number, dt: number) => {
+    if (smoothTime <= 0) return target;
+    const t = 1 - Math.exp(-dt / smoothTime);
+    return current + (target - current) * t;
+  };
 
-    onTrack = isOnTrack(trackConfig, car.position.x, car.position.y, 0.95);
+  const smoothAngle = (current: number, target: number, smoothTime: number, dt: number) => {
+    if (smoothTime <= 0) return target;
+    let delta = target - current;
+    delta = ((delta + Math.PI) % (Math.PI * 2)) - Math.PI;
+    const t = 1 - Math.exp(-dt / smoothTime);
+    return current + delta * t;
+  };
 
-    if (!onTrack) {
-      car.velocity.x *= Math.max(0, 1 - dt * 2.4);
-      car.velocity.y *= Math.max(0, 1 - dt * 2.4);
-      combo = 0;
-      multiplier = 1;
+  const updateDisplayState = (target: SimulationSnapshot, dt: number) => {
+    displayCar.position.x = smoothStep(
+      displayCar.position.x,
+      target.car.position.x,
+      0.08,
+      dt
+    );
+    displayCar.position.y = smoothStep(
+      displayCar.position.y,
+      target.car.position.y,
+      0.08,
+      dt
+    );
+    displayCar.velocity.x = smoothStep(
+      displayCar.velocity.x,
+      target.car.velocity.x,
+      0.12,
+      dt
+    );
+    displayCar.velocity.y = smoothStep(
+      displayCar.velocity.y,
+      target.car.velocity.y,
+      0.12,
+      dt
+    );
+    displayCar.heading = smoothAngle(
+      displayCar.heading,
+      target.car.heading,
+      0.08,
+      dt
+    );
+
+    displayCamera.x = smoothStep(displayCamera.x, target.camera.x, 0.12, dt);
+    displayCamera.y = smoothStep(displayCamera.y, target.camera.y, 0.12, dt);
+  };
+
+  const maybeAdjustResolution = (time: number, frameDt: number) => {
+    const frameMs = frameDt * 1000;
+    frameEmaMs = frameEmaMs * 0.9 + frameMs * 0.1;
+    if (time - lastScaleCheck < 500) return;
+    lastScaleCheck = time;
+
+    let nextScale = renderScale;
+    if (frameEmaMs > 18) {
+      nextScale = Math.max(0.6, renderScale - 0.05);
+    } else if (frameEmaMs < 14) {
+      nextScale = Math.min(settings.maxDpr, renderScale + 0.02);
     }
 
-    const driftIntensity = Math.abs(driftAngle);
-    const driftActive = onTrack && speed > 25 && driftIntensity > 0.16;
-
-    if (driftActive) {
-      combo = clamp(combo + dt, 0, 4);
-      if (combo > 1) {
-        multiplier = clamp(multiplier + dt * 0.4, 1, 6);
-      }
-      const driftScore = speed * driftIntensity * 0.35;
-      score += driftScore * multiplier * dt;
-    } else {
-      combo = clamp(combo - dt * 1.2, 0, 4);
-      if (combo === 0) {
-        multiplier = clamp(multiplier - dt * 1.5, 1, 6);
-      }
+    if (Math.abs(nextScale - renderScale) >= 0.01) {
+      renderScale = nextScale;
+      resize();
     }
-
-    // Frame-rate independent camera smoothing (feels consistent across FPS).
-    camera.y = damp(camera.y, car.position.y, 0.22, dt);
-    const { centerX } = sampleTrack(trackConfig, camera.y);
-    camera.x = damp(camera.x, centerX, 0.32, dt);
-
-    return { speed };
   };
 
   const loop = (time: number) => {
-    const dt = Math.min(0.05, (time - lastTime) / 1000);
+    if (!renderer) return;
+
+    const frameDt = Math.min(MAX_FRAME_TIME, (time - lastTime) / 1000);
     lastTime = time;
-    const { speed } = update(dt);
 
-    renderFrame({
-      ctx,
-      canvas,
-      config: trackConfig,
-      car,
-      camera,
-      anchor,
-      asphalt
-    });
+    if (!worker) {
+      accumulator += frameDt;
+      let steps = 0;
+      while (accumulator >= settings.fixedStep && steps < MAX_SIM_STEPS) {
+        updateLocal(settings.fixedStep);
+        accumulator -= settings.fixedStep;
+        steps += 1;
+      }
+      if (steps === MAX_SIM_STEPS) {
+        accumulator = 0;
+      }
+    }
 
-    if (onTelemetry && time - lastTelemetry > 120) {
-      lastTelemetry = time;
-      onTelemetry({
-        speed,
-        driftAngle,
-        score,
-        multiplier,
-        combo,
-        onTrack
+    maybeAdjustResolution(time, frameDt);
+
+    const renderInterval = 1000 / Math.max(10, settings.renderFps);
+    if (time - lastRender >= renderInterval) {
+      const snapshot = workerSnapshot;
+      if (snapshot) {
+        const renderDt = Math.max(0.001, (time - lastRender) / 1000);
+        updateDisplayState(snapshot, renderDt);
+      } else {
+        displayCar.position.x = simState.car.position.x;
+        displayCar.position.y = simState.car.position.y;
+        displayCar.velocity.x = simState.car.velocity.x;
+        displayCar.velocity.y = simState.car.velocity.y;
+        displayCar.heading = simState.car.heading;
+        displayCamera.x = simState.camera.x;
+        displayCamera.y = simState.camera.y;
+      }
+
+      renderer.render({
+        car: displayCar,
+        camera: displayCamera,
+        config: trackConfig,
+        anchor
       });
+      lastRender = time;
+    }
+
+    if (onTelemetry && time - lastTelemetry > TELEMETRY_INTERVAL) {
+      lastTelemetry = time;
+      const telemetry = workerSnapshot?.telemetry ?? getTelemetry(simState);
+      onTelemetry(telemetry);
     }
 
     raf = window.requestAnimationFrame(loop);
   };
 
-  raf = window.requestAnimationFrame(loop);
+  const start = () => {
+    if (!renderer || destroyed) return;
+    renderer.updateTrack(trackConfig);
+    renderer.setQuality(settings.quality);
+    resize();
+    raf = window.requestAnimationFrame(loop);
+  };
+
+  const initRenderer = async () => {
+    const createCanvasFallback = () => {
+      try {
+        return createCanvasRenderer(canvas);
+      } catch (error) {
+        const freshCanvas = document.createElement("canvas");
+        freshCanvas.className = canvas.className;
+        freshCanvas.setAttribute("aria-hidden", "true");
+        if (canvas.parentElement === container) {
+          container.replaceChild(freshCanvas, canvas);
+        } else {
+          container.appendChild(freshCanvas);
+        }
+        canvas = freshCanvas;
+        return createCanvasRenderer(canvas);
+      }
+    };
+
+    if (settings.renderer === "canvas2d") {
+      return createCanvasFallback();
+    }
+
+    try {
+      return await createPixiRenderer(canvas, trackConfig);
+    } catch (error) {
+      return createCanvasFallback();
+    }
+  };
+
+  void initRenderer().then((nextRenderer) => {
+    if (destroyed) {
+      nextRenderer.destroy();
+      return;
+    }
+    renderer = nextRenderer;
+    start();
+  });
 
   return {
     updateTrack: (config: TrackConfig) => {
       trackConfig = config;
+      renderer?.updateTrack(config);
+      if (worker) {
+        worker.postMessage({ type: "updateTrack", trackConfig: config });
+      }
     },
     destroy: () => {
+      destroyed = true;
       window.cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("resize", resize);
+      worker?.terminate();
+      renderer?.destroy();
+      if (canvas.parentElement === container) {
+        container.removeChild(canvas);
+      }
     }
   };
-}
-
-function normalizeAngle(angle: number): number {
-  let normalized = angle;
-  while (normalized > Math.PI) normalized -= Math.PI * 2;
-  while (normalized < -Math.PI) normalized += Math.PI * 2;
-  return normalized;
-}
-
-function damp(
-  current: number,
-  target: number,
-  smoothTimeSeconds: number,
-  dt: number
-): number {
-  if (smoothTimeSeconds <= 0) return target;
-  const t = 1 - Math.exp(-dt / smoothTimeSeconds);
-  return lerp(current, target, t);
 }

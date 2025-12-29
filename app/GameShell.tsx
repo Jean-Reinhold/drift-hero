@@ -75,8 +75,12 @@ export default function GameShell() {
         );
         iframe.setAttribute("allowfullscreen", "true");
       }
-      event.target.unMute();
-      event.target.playVideo();
+      if (typeof event.target.unMute === "function") {
+        event.target.unMute();
+      }
+      if (typeof event.target.playVideo === "function") {
+        event.target.playVideo();
+      }
     };
 
     const initPlayer = () => {
@@ -149,8 +153,12 @@ export default function GameShell() {
         return;
       }
 
-      player.unMute();
-      player.playVideo();
+      if (typeof player.unMute === "function") {
+        player.unMute();
+      }
+      if (typeof player.playVideo === "function") {
+        player.playVideo();
+      }
       hasUnmutedRef.current = true;
       window.removeEventListener("pointerdown", handleInteraction);
       window.removeEventListener("keydown", handleInteraction);
